@@ -59,12 +59,14 @@ CScrapperDlg::CScrapperDlg(CWnd* pParent /*=nullptr*/)
 void CScrapperDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_LIST_EXCEL_FILES, m_ListCtrl);
 }
 
 BEGIN_MESSAGE_MAP(CScrapperDlg, CDialogEx)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
+	ON_BN_CLICKED(IDOK, &CScrapperDlg::OnBnClickedOk)
 END_MESSAGE_MAP()
 
 
@@ -99,8 +101,15 @@ BOOL CScrapperDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// Set big icon
 	SetIcon(m_hIcon, FALSE);		// Set small icon
 
-	// TODO: Add extra initialization here
+	m_ListCtrl.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
+	m_ListCtrl.InsertColumn(COL_File,		_T("File"),			LVCFMT_LEFT,	150);
+	m_ListCtrl.InsertColumn(COL_Rows,		_T("Rows"),			LVCFMT_RIGHT,	80);
+	m_ListCtrl.InsertColumn(COL_URL,		_T("URL column"),	LVCFMT_CENTER,	80);
+	m_ListCtrl.InsertColumn(COL_Threads,	_T("Threads"),		LVCFMT_RIGHT,	80);
+	m_ListCtrl.InsertColumn(COL_Status,		_T("Status"),		LVCFMT_LEFT,	80);
+
+	AdjustListColumn(&m_ListCtrl);
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
 
@@ -153,3 +162,31 @@ HCURSOR CScrapperDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
+
+
+void CScrapperDlg::OnBnClickedOk()
+{
+	// TODO: Add your control notification handler code here
+	CDialogEx::OnOK();
+}
+
+void CScrapperDlg::AdjustListColumn(CListCtrl *list) {
+	if (list->GetHeaderCtrl()->GetItemCount() == 0) {
+		return;
+	}
+	CRect rect;
+	list->GetClientRect(&rect);
+
+	int totalWidth = rect.Width();
+	int columnCount = list->GetHeaderCtrl()->GetItemCount();
+
+	int otherColumnsWidth = 0;
+	for (int i = 0; i < columnCount - 1; i++) {
+		otherColumnsWidth += list->GetColumnWidth(i);
+	}
+
+	int lastColumnWidth = totalWidth - otherColumnsWidth - 2;
+	if (lastColumnWidth > 0) {
+		list->SetColumnWidth(columnCount - 1, lastColumnWidth);
+	}
+}

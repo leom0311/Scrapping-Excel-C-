@@ -4,6 +4,13 @@
 
 #pragma once
 
+enum {
+	COL_File = 0,
+	COL_Rows,
+	COL_URL,
+	COL_Threads,
+	COL_Status
+};
 
 // CScrapperDlg dialog
 class CScrapperDlg : public CDialogEx
@@ -31,4 +38,10 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
+
+public:
+	void AdjustListColumn(CListCtrl* list);
+public:
+	CListCtrl m_ListCtrl;
+	afx_msg void OnBnClickedOk();
 };
