@@ -60,6 +60,10 @@ public:
 	void AdjustListColumn(CListCtrl* list);
 	void SetThreadColumn(int index, int nThread, CString column);
 	void RemoveItem(int index);
+	void EnableAllButtons(bool b);
+
+	static DWORD WINAPI ThreadScrapping(LPVOID lpParam);
+	static DWORD WINAPI ThreadMonitor(LPVOID lpParam);
 public:
 	CListCtrl m_ListCtrl;
 	afx_msg void OnBnClickedOk();
@@ -67,4 +71,5 @@ public:
 	afx_msg void OnBnClickedButtonEdit();
 	afx_msg void OnBnClickedButtonRemove();
 	afx_msg void OnBnClickedButtonClear();
+	afx_msg void OnBnClickedCancel();
 };

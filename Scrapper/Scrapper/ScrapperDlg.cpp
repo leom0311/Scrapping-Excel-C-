@@ -18,6 +18,13 @@
 // CAboutDlg dialog used for App About
 
 std::vector<TaskExcel> g_Tasks;
+int g_nTotalThread = 0;
+BOOL g_bStop = FALSE;
+BOOL g_bStarted = FALSE;
+
+#define ENABLE_WINDOW(id, x) do { \
+	GetDlgItem(id)->EnableWindow(b); \
+} while(0)
 
 class CAboutDlg : public CDialogEx
 {
@@ -75,6 +82,7 @@ BEGIN_MESSAGE_MAP(CScrapperDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_EDIT, &CScrapperDlg::OnBnClickedButtonEdit)
 	ON_BN_CLICKED(IDC_BUTTON_REMOVE, &CScrapperDlg::OnBnClickedButtonRemove)
 	ON_BN_CLICKED(IDC_BUTTON_CLEAR, &CScrapperDlg::OnBnClickedButtonClear)
+	ON_BN_CLICKED(IDCANCEL, &CScrapperDlg::OnBnClickedCancel)
 END_MESSAGE_MAP()
 
 
@@ -118,6 +126,8 @@ BOOL CScrapperDlg::OnInitDialog()
 	m_ListCtrl.InsertColumn(COL_Status,		_T("Status"),		LVCFMT_CENTER,	80);
 
 	AdjustListColumn(&m_ListCtrl);
+	
+	int result = _setmaxstdio(8192);
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
 
@@ -170,10 +180,126 @@ HCURSOR CScrapperDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-void CScrapperDlg::OnBnClickedOk()
-{
-	// TODO: Add your control notification handler code here
-	CDialogEx::OnOK();
+void execute_curl_command(const char* url) {
+	char command[256];
+	snprintf(command, sizeof(command), "curl -s \"%s\"", url);
+
+	SECURITY_ATTRIBUTES sa;
+	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+	sa.lpSecurityDescriptor = NULL;
+	sa.bInheritHandle = TRUE;
+
+	HANDLE hRead, hWrite;
+	if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
+		fprintf(stderr, "CreatePipe failed.\n");
+		return;
+	}
+
+	if (!SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0)) {
+		fprintf(stderr, "SetHandleInformation failed.\n");
+		return;
+	}
+
+	STARTUPINFOA si;
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+	si.wShowWindow = SW_HIDE;
+	si.hStdOutput = hWrite;
+	si.hStdError = hWrite;
+
+	PROCESS_INFORMATION pi;
+	ZeroMemory(&pi, sizeof(pi));
+
+	if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+		fprintf(stderr, "CreateProcess failed (%d).\n", GetLastError());
+		return;
+	}
+	CloseHandle(hWrite);
+
+	char buffer[128];
+	DWORD bytesRead;
+	while (ReadFile(hRead, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+		buffer[bytesRead] = '\0';
+		printf("%s", buffer);
+	}
+
+	CloseHandle(hRead);
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+}
+
+DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
+	CScrapperDlg* pThis = (CScrapperDlg*)lpParam;
+	while (1) {
+		if (g_nTotalThread <= 0) {
+			break;
+		}
+	}
+	pThis->EnableAllButtons(TRUE);
+	g_bStarted = FALSE;
+	return (DWORD)0;
+}
+
+DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
+	g_nTotalThread++;
+	int i = (int)lpParam;
+	while (1) {
+		if (g_bStop) {
+			break;
+		}
+		EnterCriticalSection(&g_Tasks[i].mutex);
+		if (g_Tasks[i].pos >= g_Tasks[i].items.size()) {
+			LeaveCriticalSection(&g_Tasks[i].mutex);
+			break;
+		}
+		TaskItem item = g_Tasks[i].items[g_Tasks[i].pos];
+		g_Tasks[i].pos++;
+
+		execute_curl_command(item.url);
+		LeaveCriticalSection(&g_Tasks[i].mutex);
+	}
+	g_nTotalThread--;
+	return (DWORD)0;
+}
+
+void CScrapperDlg::OnBnClickedOk() {
+	g_nTotalThread = 0;
+	g_bStop = FALSE;
+	g_bStarted = FALSE;
+	for (int i = 0; i < g_Tasks.size(); i++) {
+		g_Tasks[i].pos = 0;
+	}
+
+	if (g_Tasks.size() == 0) {
+		AfxMessageBox(_T("No Task"));
+		return;
+	}
+	EnableAllButtons(FALSE);
+	for (int i = 0; i < g_Tasks.size(); i++) {
+		for (int j = 0; j < g_Tasks[i].thread; j++) {
+			CreateThread(
+				NULL,
+				0,
+				ThreadScrapping,
+				(LPVOID)i,
+				0,
+				NULL);
+		}
+	}
+	Sleep(500);
+
+	CreateThread(
+		NULL,
+		0,
+		ThreadMonitor,
+		this,
+		0,
+		NULL);
+
+	GetDlgItem(IDCANCEL)->EnableWindow(TRUE);
+	GetDlgItem(IDCANCEL)->SetWindowTextW(_T("Stop"));
+	g_bStarted = TRUE;
 }
 
 void CScrapperDlg::AdjustListColumn(CListCtrl *list) {
@@ -237,6 +363,7 @@ void CString2Str(CString source, char* target) {
 }
 
 void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
+	EnableAllButtons(FALSE);
 	CString tmp;
 	tmp.Format(_T("%d"), nThread);
 	m_ListCtrl.SetItemText(index, COL_Threads, tmp);
@@ -250,6 +377,7 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 	if ((xlsxioread = xlsxioread_open(szFile)) == NULL) {
 		AfxMessageBox(_T("Error opening .xlsx file"));
 		RemoveItem(index);
+		EnableAllButtons(TRUE);
 		return;
 	}
 
@@ -283,7 +411,6 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 								item.url[j] = url[j];
 							}
 							g_Tasks[index].items.push_back(item);
-
 						}
 						else {
 							InvalidRow++;
@@ -310,6 +437,16 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 
 	status.Format(_T("%d"), totalRow);
 	m_ListCtrl.SetItemText(index, COL_Rows, status);
+	EnableAllButtons(TRUE);
+}
+
+void CScrapperDlg::EnableAllButtons(bool b) {
+	ENABLE_WINDOW(IDOK, b);
+	ENABLE_WINDOW(IDC_BUTTON_ADD, b);
+	ENABLE_WINDOW(IDC_BUTTON_EDIT, b);
+	ENABLE_WINDOW(IDC_BUTTON_REMOVE, b);
+	ENABLE_WINDOW(IDC_BUTTON_CLEAR, b);
+	ENABLE_WINDOW(IDCANCEL, b);
 }
 
 void CScrapperDlg::OnBnClickedButtonEdit() {
@@ -341,4 +478,16 @@ void CScrapperDlg::OnBnClickedButtonRemove() {
 
 void CScrapperDlg::OnBnClickedButtonClear() {
 	m_ListCtrl.DeleteAllItems();
+}
+
+
+void CScrapperDlg::OnBnClickedCancel() {
+	if (g_bStarted) {
+		GetDlgItem(IDCANCEL)->EnableWindow(FALSE);
+		GetDlgItem(IDCANCEL)->SetWindowTextW(_T("Close"));
+
+		g_bStop = TRUE;
+		return;
+	}
+	CDialogEx::OnCancel();
 }
