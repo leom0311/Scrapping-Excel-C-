@@ -86,6 +86,12 @@ void CScrapperDlg::DoDataExchange(CDataExchange* pDX)
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_LIST_EXCEL_FILES, m_ListCtrl);
 	DDX_Control(pDX, IDC_PROGRESS2, m_Percent);
+	DDX_Check(pDX, IDC_CHECK_PROXY, m_UseProxySetting);
+	DDX_Control(pDX, IDC_EDIT_PROXY, m_editProxy);
+
+	DDX_Text(pDX, IDC_EDIT3, m_strTLDs);
+	
+	
 }
 
 BEGIN_MESSAGE_MAP(CScrapperDlg, CDialogEx)
@@ -98,6 +104,8 @@ BEGIN_MESSAGE_MAP(CScrapperDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_REMOVE, &CScrapperDlg::OnBnClickedButtonRemove)
 	ON_BN_CLICKED(IDC_BUTTON_CLEAR, &CScrapperDlg::OnBnClickedButtonClear)
 	ON_BN_CLICKED(IDCANCEL, &CScrapperDlg::OnBnClickedCancel)
+	ON_BN_CLICKED(IDC_CHECK_PROXY, &CScrapperDlg::OnBnClickedCheckProxy)
+	ON_EN_CHANGE(IDC_EDIT_PROXY, &CScrapperDlg::OnEnChangeEditProxy)
 END_MESSAGE_MAP()
 
 
@@ -146,6 +154,26 @@ BOOL CScrapperDlg::OnInitDialog()
 
 	m_Percent.ShowWindow(SW_HIDE);
 
+	UpdateData();
+	m_UseProxySetting = FALSE;
+	m_editProxy.EnableWindow(FALSE);
+
+	FILE* fp;
+	fopen_s(&fp, "proxy.config", "rb");
+	if (fp) {
+		char szBuf[0x100] = { 0 };
+		fread(szBuf, 1, 0x100 - 4, fp);
+		fclose(fp);
+
+		TCHAR szCP[0x100] = { 0 };
+		for (int i = 0; i < strlen(szBuf); i++) {
+			szCP[i] = szBuf[i];
+		}
+
+		m_editProxy.SetWindowTextW(szCP);
+	}
+	LoadTLD();
+	UpdateData(FALSE);
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
 
@@ -214,6 +242,7 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 	if (!g_bStop) {
 		for (int i = 0; i < g_Tasks.size(); i++) {
 			Book* book = xlCreateXMLBook();
+			book->setKey(_T("Halil Kural"), _T("windows-2723210a07c4e90162b26966a8jcdboe"));
 			if (book) {
 				TCHAR szXlsx[MAX_PATH] = { 0 };
 				CString2Wstr(g_Tasks[i].file, szXlsx);
@@ -634,4 +663,59 @@ void CScrapperDlg::Terminated() {
 	else {
 		AfxMessageBox(_T("Finished"));
 	}
+}
+
+void CScrapperDlg::OnBnClickedCheckProxy() {
+	UpdateData();
+	m_editProxy.EnableWindow(m_UseProxySetting);
+	UpdateData(FALSE);
+}
+
+void CScrapperDlg::OnEnChangeEditProxy() {
+	UpdateData();
+	TCHAR szProxy[0x100] = { 0 };
+	m_editProxy.GetWindowText(szProxy, 0x100 - 4);
+	char szBuf[0x100] = { 0 };
+	for (int i = 0; i < wcslen(szProxy); i++) {
+		szBuf[i] = szProxy[i];
+	}
+	FILE* fp;
+	fopen_s(&fp, "proxy.config", "wb");
+	if (fp) {
+		fwrite(szBuf, 1, strlen(szBuf), fp);
+		fclose(fp);
+	}
+	UpdateData(FALSE);
+}
+
+void CScrapperDlg::LoadTLD() {
+	FILE* fp;
+	fopen_s(&fp, "TLD.txt", "rb");
+	if (fp) {
+		char buffer[0x100] = { 0 };
+		while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+			char cp[0x100] = { 0 };
+			int offset = 0;
+			for (int i = 0; i < strlen(buffer); i++) {
+				CString tmp;
+				if (buffer[i] >= 'A' && buffer[i] <= 'Z') {
+					cp[offset++] = buffer[i] - 'A' + 'a';
+					tmp.Format(_T("%c"), buffer[i] - 'A' + 'a');
+					m_strTLDs += tmp;
+				}
+				else if (buffer[i] >= 'a' && buffer[i] <= 'z') {
+					cp[offset++] = buffer[i];
+					tmp.Format(_T("%c"), buffer[i]);
+					m_strTLDs += tmp;
+				}
+			}
+			memset(buffer, 0, sizeof(buffer));
+
+			if (strlen(cp)) {
+				m_strTLDs += _T("\r\n");
+			}
+		}
+		fclose(fp);
+	}
+	UpdateData(FALSE);
 }

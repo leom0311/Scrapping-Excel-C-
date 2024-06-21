@@ -68,6 +68,7 @@ public:
 	void EnableAllButtons(bool b);
 	void UpdatePercent();
 	void Terminated();
+	void LoadTLD();
 
 	static DWORD WINAPI ThreadScrapping(LPVOID lpParam);
 	static DWORD WINAPI ThreadMonitor(LPVOID lpParam);
@@ -80,4 +81,9 @@ public:
 	afx_msg void OnBnClickedButtonClear();
 	afx_msg void OnBnClickedCancel();
 	CProgressCtrl m_Percent;
+	afx_msg void OnBnClickedCheckProxy();
+	BOOL m_UseProxySetting;
+	CEdit m_editProxy;
+	afx_msg void OnEnChangeEditProxy();
+	CString m_strTLDs;
 };
