@@ -13,8 +13,11 @@
 #define new DEBUG_NEW
 #endif
 
+#include <xlsxio_read.h>
 
 // CAboutDlg dialog used for App About
+
+std::vector<TaskExcel> g_Tasks;
 
 class CAboutDlg : public CDialogEx
 {
@@ -209,7 +212,14 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 	m_ListCtrl.SetItemText(n, COL_Rows, _T("--"));
 	m_ListCtrl.SetItemText(n, COL_URL, _T("--"));
 	m_ListCtrl.SetItemText(n, COL_Threads, _T("--"));
-	m_ListCtrl.SetItemText(n, COL_Status, _T("Reading file..."));
+	m_ListCtrl.SetItemText(n, COL_Status, _T("Reading..."));
+
+	TaskExcel task;
+	task.file = dlg.GetPathName();
+	task.pos = 0;
+	InitializeCriticalSection(&task.mutex);
+
+	g_Tasks.push_back(task);
 
 	CSettingDlg settingDlg;
 	settingDlg.OpenModal(this, TRUE, n, 1, _T("B"));
@@ -217,6 +227,7 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 
 void CScrapperDlg::RemoveItem(int index) {
 	m_ListCtrl.DeleteItem(index);
+	g_Tasks.erase(g_Tasks.begin() + index);
 }
 
 void CString2Str(CString source, char* target) {
@@ -225,7 +236,6 @@ void CString2Str(CString source, char* target) {
 	}
 }
 
-#include <xlsxio_read.h>
 void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 	CString tmp;
 	tmp.Format(_T("%d"), nThread);
@@ -238,24 +248,68 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 	
 	xlsxioreader xlsxioread;
 	if ((xlsxioread = xlsxioread_open(szFile)) == NULL) {
-		fprintf(stderr, "Error opening .xlsx file\n");
+		AfxMessageBox(_T("Error opening .xlsx file"));
+		RemoveItem(index);
 		return;
 	}
+
+	int urlIdx = column.GetAt(0) - 'A';
 	char* value;
 	xlsxioreadersheet sheet;
 	const char* sheetname = NULL;
-	int n = 0;
+
+	g_Tasks[index].col = urlIdx;
+	g_Tasks[index].thread = nThread;
+	g_Tasks[index].items.clear();
+
+	int totalRow = 0;
+	int ValidRow = 0;
+	int InvalidRow = 0;
+	int EmptyRow = 0;
 	if ((sheet = xlsxioread_sheet_open(xlsxioread, sheetname, XLSXIOREAD_SKIP_EMPTY_ROWS)) != NULL) {
 		while (xlsxioread_sheet_next_row(sheet)) {
-			n++;
+			int tmp = 0;
 			while ((value = xlsxioread_sheet_next_cell(sheet)) != NULL) {
-				TCHAR* t = (TCHAR*)value;
+				if (tmp == urlIdx) {
+					TCHAR* url = (TCHAR*)value;
+					if (url[0]) {
+						if (wcsstr(url, _T("."))) {
+							ValidRow++;
+
+							TaskItem item;
+							item.row = totalRow;
+							memset(item.url, 0, sizeof(item.url));
+							for (int j = 0; j < wcslen(url); j++) {
+								item.url[j] = url[j];
+							}
+							g_Tasks[index].items.push_back(item);
+
+						}
+						else {
+							InvalidRow++;
+						}
+					}
+					else {
+						EmptyRow++;
+					}
+					xlsxioread_free(value);
+					break;
+				}
+				tmp++;
 				xlsxioread_free(value);
 			}
+			totalRow++;
 		}
 		xlsxioread_sheet_close(sheet);
 	}
 	xlsxioread_close(xlsxioread);
+
+	CString status;
+	status.Format(_T("Total: %d, Empty: %d, Valid: %d, Invalid: %d"), totalRow, EmptyRow, ValidRow, InvalidRow);
+	m_ListCtrl.SetItemText(index, COL_Status, status);
+
+	status.Format(_T("%d"), totalRow);
+	m_ListCtrl.SetItemText(index, COL_Rows, status);
 }
 
 void CScrapperDlg::OnBnClickedButtonEdit() {

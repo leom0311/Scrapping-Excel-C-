@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <vector>
 enum {
 	COL_File = 0,
 	COL_Rows,
@@ -11,6 +12,21 @@ enum {
 	COL_Threads,
 	COL_Status,
 	COL_CNT
+};
+
+struct TaskItem {
+	int row;
+	char url[0x100];
+};
+
+struct TaskExcel {
+	CRITICAL_SECTION mutex;
+	CString file;
+	int thread;
+	int col;
+
+	int pos;
+	std::vector<TaskItem> items;
 };
 
 // CScrapperDlg dialog
