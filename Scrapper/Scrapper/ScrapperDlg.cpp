@@ -9,11 +9,15 @@
 #include "afxdialogex.h"
 #include "CSettingDlg.h"
 
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
 #include <xlsxio_read.h>
+#include <xlsxio_write.h>
+#include "libxl.h"
+using namespace libxl;
 
 // CAboutDlg dialog used for App About
 
@@ -25,6 +29,18 @@ BOOL g_bStarted = FALSE;
 #define ENABLE_WINDOW(id, x) do { \
 	GetDlgItem(id)->EnableWindow(b); \
 } while(0)
+
+void CString2Str(CString source, char* target) {
+	for (int i = 0; i < source.GetLength(); i++) {
+		target[i] = source.GetAt(i);
+	}
+}
+
+void CString2Wstr(CString source, TCHAR* target) {
+	for (int i = 0; i < source.GetLength(); i++) {
+		target[i] = source.GetAt(i);
+	}
+}
 
 class CAboutDlg : public CDialogEx
 {
@@ -56,8 +72,6 @@ void CAboutDlg::DoDataExchange(CDataExchange* pDX)
 BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
 END_MESSAGE_MAP()
 
-
-// CScrapperDlg dialog
 
 
 
@@ -128,6 +142,7 @@ BOOL CScrapperDlg::OnInitDialog()
 	AdjustListColumn(&m_ListCtrl);
 	
 	int result = _setmaxstdio(8192);
+
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
 
@@ -181,52 +196,7 @@ HCURSOR CScrapperDlg::OnQueryDragIcon()
 }
 
 void execute_curl_command(const char* url) {
-	char command[256];
-	snprintf(command, sizeof(command), "curl -s \"%s\"", url);
-
-	SECURITY_ATTRIBUTES sa;
-	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-	sa.lpSecurityDescriptor = NULL;
-	sa.bInheritHandle = TRUE;
-
-	HANDLE hRead, hWrite;
-	if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
-		fprintf(stderr, "CreatePipe failed.\n");
-		return;
-	}
-
-	if (!SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0)) {
-		fprintf(stderr, "SetHandleInformation failed.\n");
-		return;
-	}
-
-	STARTUPINFOA si;
-	ZeroMemory(&si, sizeof(si));
-	si.cb = sizeof(si);
-	si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
-	si.wShowWindow = SW_HIDE;
-	si.hStdOutput = hWrite;
-	si.hStdError = hWrite;
-
-	PROCESS_INFORMATION pi;
-	ZeroMemory(&pi, sizeof(pi));
-
-	if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-		fprintf(stderr, "CreateProcess failed (%d).\n", GetLastError());
-		return;
-	}
-	CloseHandle(hWrite);
-
-	char buffer[128];
-	DWORD bytesRead;
-	while (ReadFile(hRead, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
-		buffer[bytesRead] = '\0';
-		printf("%s", buffer);
-	}
-
-	CloseHandle(hRead);
-	CloseHandle(pi.hProcess);
-	CloseHandle(pi.hThread);
+	
 }
 
 DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
@@ -236,9 +206,76 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 			break;
 		}
 	}
+
+	// save
+	if (!g_bStop) {
+		for (int i = 0; i < g_Tasks.size(); i++) {
+			Book* book = xlCreateXMLBook();
+			if (book) {
+				TCHAR szXlsx[MAX_PATH] = { 0 };
+				CString2Wstr(g_Tasks[i].file, szXlsx);
+				if (book->load(szXlsx)) {
+					Sheet* sheet = book->getSheet(0);
+					if (sheet) {
+						for (int j = 0; j < g_Tasks[i].saves.size(); j++) {
+							TCHAR mail[0x100] = { 0 };
+							for (int ii = 0; ii < strlen(g_Tasks[i].saves[j].mail); ii++) {
+								mail[ii] = g_Tasks[i].saves[j].mail[ii];
+							}
+							sheet->writeStr(g_Tasks[i].saves[j].row, g_Tasks[i].col - 1, mail);
+						}
+					}
+					bool ret = book->save(szXlsx);
+					printf("");
+				}
+				book->release();
+			}
+		}
+	}
 	pThis->EnableAllButtons(TRUE);
 	g_bStarted = FALSE;
 	return (DWORD)0;
+}
+
+int is_valid_email_char(char c) {
+	return isalnum(c) || c == '.' || c == '_' || c == '%' || c == '+' || c == '-' || c == '@';
+}
+
+int is_valid_email(const char* email) {
+	const char* at = strchr(email, '@');
+	if (!at) return 0;
+
+	const char* dot = strrchr(email, '.');
+	if (!dot || dot < at) return 0;
+
+	if (at == email || *(at + 1) == '\0') return 0;
+
+	if (*(dot + 1) == '\0') return 0;
+
+	return 1;
+}
+
+
+void search_email_addresses(const char* str) {
+	const char* p = str;
+	while (*p) {
+		while (*p && !isalnum(*p)) p++;
+
+		const char* start = p;
+		while (*p && is_valid_email_char(*p)) p++;
+
+		if (start != p) {
+			char email[256] = { 0 };
+			strncpy_s(email, start, p - start);
+			email[p - start] = '\0';
+
+			if (is_valid_email(email)) {
+				printf("Found email address: %s\n", email);
+			}
+		}
+
+		if (*p) p++;
+	}
 }
 
 DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
@@ -255,9 +292,81 @@ DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
 		}
 		TaskItem item = g_Tasks[i].items[g_Tasks[i].pos];
 		g_Tasks[i].pos++;
-
-		execute_curl_command(item.url);
 		LeaveCriticalSection(&g_Tasks[i].mutex);
+
+		char command[256];
+		snprintf(command, sizeof(command), "curl -s \"%s%s\"", strstr(item.url, "http") ? "" : "https://", item.url);
+
+		SECURITY_ATTRIBUTES sa;
+		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+		sa.lpSecurityDescriptor = NULL;
+		sa.bInheritHandle = TRUE;
+
+		HANDLE hRead, hWrite;
+		if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
+			goto _CONTINUE;
+		}
+
+		if (!SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0)) {
+			goto _CONTINUE;
+		}
+
+		STARTUPINFOA si;
+		ZeroMemory(&si, sizeof(si));
+		si.cb = sizeof(si);
+		si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+		si.wShowWindow = SW_HIDE;
+		si.hStdOutput = hWrite;
+		si.hStdError = hWrite;
+
+		PROCESS_INFORMATION pi;
+		ZeroMemory(&pi, sizeof(pi));
+
+		if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+			goto _CONTINUE;
+		}
+		CloseHandle(hWrite);
+		
+		char buf[0x400] = { 0 };
+		DWORD bytesRead;
+		while (ReadFile(hRead, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0) {
+			char* s = buf;
+			char* p = strstr(s, "@");
+			while (p) {
+				char* next = strstr(p + 1, "@");
+				char* ss;
+				for (ss = p; ss >= s; ss--) {
+					if (!is_valid_email_char(*ss)) {
+						break;
+					}
+				}
+				s = ss + 1;
+				for (ss = s; ss < (buf + bytesRead); ss++) {
+					if (!is_valid_email_char(*ss)) {
+						*ss = '\0';
+						break;
+					}
+				}
+				if (is_valid_email(s)) {
+					printf("%s", s);
+
+					TaskSave t;
+					t.row = item.row;
+					memset(t.mail, 0, sizeof(t.mail));
+					strcpy_s(t.mail, s);
+
+					EnterCriticalSection(&g_Tasks[i].mutex);
+					g_Tasks[i].saves.push_back(t);
+					LeaveCriticalSection(&g_Tasks[i].mutex);
+				}
+				p = next;
+			}
+			memset(buf, 0, sizeof(buf));
+		}
+	_CONTINUE:
+		CloseHandle(hRead);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
 	}
 	g_nTotalThread--;
 	return (DWORD)0;
@@ -267,8 +376,10 @@ void CScrapperDlg::OnBnClickedOk() {
 	g_nTotalThread = 0;
 	g_bStop = FALSE;
 	g_bStarted = FALSE;
+
 	for (int i = 0; i < g_Tasks.size(); i++) {
 		g_Tasks[i].pos = 0;
+		g_Tasks[i].saves.clear();
 	}
 
 	if (g_Tasks.size() == 0) {
@@ -354,12 +465,6 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 void CScrapperDlg::RemoveItem(int index) {
 	m_ListCtrl.DeleteItem(index);
 	g_Tasks.erase(g_Tasks.begin() + index);
-}
-
-void CString2Str(CString source, char* target) {
-	for (int i = 0; i < source.GetLength(); i++) {
-		target[i] = source.GetAt(i);
-	}
 }
 
 void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {

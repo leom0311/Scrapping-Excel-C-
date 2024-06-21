@@ -76,7 +76,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\Administrator\Downloads\libxl-win-4.3.0.14\include_cpp;C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
@@ -99,7 +99,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\lib\libxlsxio_readw.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\lib\libxlsxio_readw.lib;C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\lib\libxlsxio_write.lib;C:\Users\Administrator\Downloads\libxl-win-4.3.0.14\lib64\libxl.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>

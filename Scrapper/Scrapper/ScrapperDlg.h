@@ -18,6 +18,10 @@ struct TaskItem {
 	int row;
 	char url[0x100];
 };
+struct TaskSave {
+	int row;
+	char mail[0x40];
+};
 
 struct TaskExcel {
 	CRITICAL_SECTION mutex;
@@ -27,6 +31,7 @@ struct TaskExcel {
 
 	int pos;
 	std::vector<TaskItem> items;
+	std::vector<TaskSave> saves;
 };
 
 // CScrapperDlg dialog
