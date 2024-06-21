@@ -9,7 +9,8 @@ enum {
 	COL_Rows,
 	COL_URL,
 	COL_Threads,
-	COL_Status
+	COL_Status,
+	COL_CNT
 };
 
 // CScrapperDlg dialog
@@ -41,7 +42,13 @@ protected:
 
 public:
 	void AdjustListColumn(CListCtrl* list);
+	void SetThreadColumn(int index, int nThread, CString column);
+	void RemoveItem(int index);
 public:
 	CListCtrl m_ListCtrl;
 	afx_msg void OnBnClickedOk();
+	afx_msg void OnBnClickedButtonAdd();
+	afx_msg void OnBnClickedButtonEdit();
+	afx_msg void OnBnClickedButtonRemove();
+	afx_msg void OnBnClickedButtonClear();
 };

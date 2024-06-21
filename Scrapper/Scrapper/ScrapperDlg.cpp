@@ -7,6 +7,7 @@
 #include "Scrapper.h"
 #include "ScrapperDlg.h"
 #include "afxdialogex.h"
+#include "CSettingDlg.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -67,6 +68,10 @@ BEGIN_MESSAGE_MAP(CScrapperDlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_BN_CLICKED(IDOK, &CScrapperDlg::OnBnClickedOk)
+	ON_BN_CLICKED(IDC_BUTTON_ADD, &CScrapperDlg::OnBnClickedButtonAdd)
+	ON_BN_CLICKED(IDC_BUTTON_EDIT, &CScrapperDlg::OnBnClickedButtonEdit)
+	ON_BN_CLICKED(IDC_BUTTON_REMOVE, &CScrapperDlg::OnBnClickedButtonRemove)
+	ON_BN_CLICKED(IDC_BUTTON_CLEAR, &CScrapperDlg::OnBnClickedButtonClear)
 END_MESSAGE_MAP()
 
 
@@ -103,11 +108,11 @@ BOOL CScrapperDlg::OnInitDialog()
 
 	m_ListCtrl.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
-	m_ListCtrl.InsertColumn(COL_File,		_T("File"),			LVCFMT_LEFT,	150);
+	m_ListCtrl.InsertColumn(COL_File,		_T("File"),			LVCFMT_LEFT,	250);
 	m_ListCtrl.InsertColumn(COL_Rows,		_T("Rows"),			LVCFMT_RIGHT,	80);
 	m_ListCtrl.InsertColumn(COL_URL,		_T("URL column"),	LVCFMT_CENTER,	80);
 	m_ListCtrl.InsertColumn(COL_Threads,	_T("Threads"),		LVCFMT_RIGHT,	80);
-	m_ListCtrl.InsertColumn(COL_Status,		_T("Status"),		LVCFMT_LEFT,	80);
+	m_ListCtrl.InsertColumn(COL_Status,		_T("Status"),		LVCFMT_CENTER,	80);
 
 	AdjustListColumn(&m_ListCtrl);
 	return TRUE;  // return TRUE  unless you set the focus to a control
@@ -162,8 +167,6 @@ HCURSOR CScrapperDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-
-
 void CScrapperDlg::OnBnClickedOk()
 {
 	// TODO: Add your control notification handler code here
@@ -189,4 +192,68 @@ void CScrapperDlg::AdjustListColumn(CListCtrl *list) {
 	if (lastColumnWidth > 0) {
 		list->SetColumnWidth(columnCount - 1, lastColumnWidth);
 	}
+}
+
+void CScrapperDlg::OnBnClickedButtonAdd() {
+	CString filter = _T("Excel Files (*.xlsx)|*.xlsx||");
+
+	CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, filter, this);
+
+	if (dlg.DoModal() != IDOK) {
+		return;
+	}
+
+	CString filePath = dlg.GetPathName();
+	int n = m_ListCtrl.GetItemCount();
+	m_ListCtrl.InsertItem(n, dlg.GetPathName());
+	m_ListCtrl.SetItemText(n, COL_Rows, _T("--"));
+	m_ListCtrl.SetItemText(n, COL_URL, _T("--"));
+	m_ListCtrl.SetItemText(n, COL_Threads, _T("--"));
+	m_ListCtrl.SetItemText(n, COL_Status, _T("Reading file..."));
+
+	CSettingDlg settingDlg;
+	settingDlg.OpenModal(this, TRUE, n, 1, _T("B"));
+}
+
+void CScrapperDlg::RemoveItem(int index) {
+	m_ListCtrl.DeleteItem(index);
+}
+
+
+void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
+	CString tmp;
+	tmp.Format(_T("%d"), nThread);
+	m_ListCtrl.SetItemText(index, COL_Threads, tmp);
+	m_ListCtrl.SetItemText(index, COL_URL, column);
+}
+
+void CScrapperDlg::OnBnClickedButtonEdit() {
+	POSITION pos = m_ListCtrl.GetFirstSelectedItemPosition();
+	if (pos == NULL) {
+		AfxMessageBox(_T("No item selected."));
+		return;
+	}
+	int nItem = m_ListCtrl.GetNextSelectedItem(pos);
+
+	int thread = _ttoi(m_ListCtrl.GetItemText(nItem, COL_Threads));
+	CString col = m_ListCtrl.GetItemText(nItem, COL_URL);
+
+	CSettingDlg settingDlg;
+	settingDlg.OpenModal(this, FALSE, nItem, thread, col);
+}
+
+
+void CScrapperDlg::OnBnClickedButtonRemove() {
+	POSITION pos = m_ListCtrl.GetFirstSelectedItemPosition();
+	if (pos == NULL) {
+		AfxMessageBox(_T("No item selected."));
+		return;
+	}
+	int nItem = m_ListCtrl.GetNextSelectedItem(pos);
+	m_ListCtrl.DeleteItem(nItem);
+}
+
+
+void CScrapperDlg::OnBnClickedButtonClear() {
+	m_ListCtrl.DeleteAllItems();
 }
