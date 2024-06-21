@@ -85,6 +85,7 @@ void CScrapperDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_LIST_EXCEL_FILES, m_ListCtrl);
+	DDX_Control(pDX, IDC_PROGRESS2, m_Percent);
 }
 
 BEGIN_MESSAGE_MAP(CScrapperDlg, CDialogEx)
@@ -142,6 +143,8 @@ BOOL CScrapperDlg::OnInitDialog()
 	AdjustListColumn(&m_ListCtrl);
 	
 	int result = _setmaxstdio(8192);
+
+	m_Percent.ShowWindow(SW_HIDE);
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -225,14 +228,14 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 							sheet->writeStr(g_Tasks[i].saves[j].row, g_Tasks[i].col - 1, mail);
 						}
 					}
-					bool ret = book->save(szXlsx);
-					printf("");
+					book->save(szXlsx);
 				}
 				book->release();
 			}
 		}
 	}
 	pThis->EnableAllButtons(TRUE);
+	pThis->Terminated();
 	g_bStarted = FALSE;
 	return (DWORD)0;
 }
@@ -278,9 +281,16 @@ void search_email_addresses(const char* str) {
 	}
 }
 
+struct ThreadParam {
+	CScrapperDlg* pThis;
+	int index;
+};
+
 DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
 	g_nTotalThread++;
-	int i = (int)lpParam;
+	ThreadParam* param = (ThreadParam *)lpParam;
+	int i = param->index;
+	CScrapperDlg* pThis = param->pThis;
 	while (1) {
 		if (g_bStop) {
 			break;
@@ -367,8 +377,10 @@ DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
 		CloseHandle(hRead);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
+		pThis->UpdatePercent();
 	}
 	g_nTotalThread--;
+	free(param);
 	return (DWORD)0;
 }
 
@@ -386,14 +398,20 @@ void CScrapperDlg::OnBnClickedOk() {
 		AfxMessageBox(_T("No Task"));
 		return;
 	}
+	m_Percent.ShowWindow(SW_SHOW);
+	UpdatePercent();
 	EnableAllButtons(FALSE);
+
 	for (int i = 0; i < g_Tasks.size(); i++) {
 		for (int j = 0; j < g_Tasks[i].thread; j++) {
+			ThreadParam *param = (ThreadParam *)malloc(sizeof(ThreadParam));
+			param->pThis = this;
+			param->index = i;
 			CreateThread(
 				NULL,
 				0,
 				ThreadScrapping,
-				(LPVOID)i,
+				(LPVOID)param,
 				0,
 				NULL);
 		}
@@ -589,10 +607,31 @@ void CScrapperDlg::OnBnClickedButtonClear() {
 void CScrapperDlg::OnBnClickedCancel() {
 	if (g_bStarted) {
 		GetDlgItem(IDCANCEL)->EnableWindow(FALSE);
-		GetDlgItem(IDCANCEL)->SetWindowTextW(_T("Close"));
-
+		
 		g_bStop = TRUE;
 		return;
 	}
 	CDialogEx::OnCancel();
+}
+
+void CScrapperDlg::UpdatePercent() {
+	int total = 0;
+	int complete = 0;
+	for (int i = 0; i < g_Tasks.size(); i++) {
+		total += g_Tasks[i].items.size();
+		complete += g_Tasks[i].pos;
+	}
+	m_Percent.SetRange(0, total);
+	m_Percent.SetPos(complete);
+}
+
+void CScrapperDlg::Terminated() {
+	GetDlgItem(IDCANCEL)->SetWindowTextW(_T("Close"));
+	m_Percent.ShowWindow(SW_HIDE);
+	if (g_bStop) {
+		AfxMessageBox(_T("Stopped"));
+	}
+	else {
+		AfxMessageBox(_T("Finished"));
+	}
 }
