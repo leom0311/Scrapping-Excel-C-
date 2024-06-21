@@ -219,12 +219,43 @@ void CScrapperDlg::RemoveItem(int index) {
 	m_ListCtrl.DeleteItem(index);
 }
 
+void CString2Str(CString source, char* target) {
+	for (int i = 0; i < source.GetLength(); i++) {
+		target[i] = source.GetAt(i);
+	}
+}
 
+#include <xlsxio_read.h>
 void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 	CString tmp;
 	tmp.Format(_T("%d"), nThread);
 	m_ListCtrl.SetItemText(index, COL_Threads, tmp);
 	m_ListCtrl.SetItemText(index, COL_URL, column);
+
+	char szFile[MAX_PATH] = { 0 };
+	CString file = m_ListCtrl.GetItemText(index, COL_File);
+	CString2Str(file, szFile);
+	
+	xlsxioreader xlsxioread;
+	if ((xlsxioread = xlsxioread_open(szFile)) == NULL) {
+		fprintf(stderr, "Error opening .xlsx file\n");
+		return;
+	}
+	char* value;
+	xlsxioreadersheet sheet;
+	const char* sheetname = NULL;
+	int n = 0;
+	if ((sheet = xlsxioread_sheet_open(xlsxioread, sheetname, XLSXIOREAD_SKIP_EMPTY_ROWS)) != NULL) {
+		while (xlsxioread_sheet_next_row(sheet)) {
+			n++;
+			while ((value = xlsxioread_sheet_next_cell(sheet)) != NULL) {
+				TCHAR* t = (TCHAR*)value;
+				xlsxioread_free(value);
+			}
+		}
+		xlsxioread_sheet_close(sheet);
+	}
+	xlsxioread_close(xlsxioread);
 }
 
 void CScrapperDlg::OnBnClickedButtonEdit() {
