@@ -26,6 +26,9 @@
 *.a
 *.lib
 
+*.xlsx
+*.xls
+
 # Executables
 *.exe
 *.out
