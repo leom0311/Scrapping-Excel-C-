@@ -26,6 +26,16 @@ int g_nTotalThread = 0;
 BOOL g_bStop = FALSE;
 BOOL g_bStarted = FALSE;
 
+BOOL g_bUseProxy = FALSE;
+char g_szProxy[0x100] = { 0 };
+
+typedef
+struct TLD {
+	char v[0x40];
+};
+
+std::vector<TLD> g_TLDs;
+
 #define ENABLE_WINDOW(id, x) do { \
 	GetDlgItem(id)->EnableWindow(b); \
 } while(0)
@@ -34,6 +44,16 @@ void CString2Str(CString source, char* target) {
 	for (int i = 0; i < source.GetLength(); i++) {
 		target[i] = source.GetAt(i);
 	}
+}
+
+CString Str2CString(char* source) {
+	CString ret;
+	for (int i = 0; i < strlen(source); i++) {
+		CString tmp;
+		tmp.Format(_T("%c"), source[i]);
+		ret += tmp;
+	}
+	return ret;
 }
 
 void CString2Wstr(CString source, TCHAR* target) {
@@ -143,10 +163,11 @@ BOOL CScrapperDlg::OnInitDialog()
 	m_ListCtrl.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
 	m_ListCtrl.InsertColumn(COL_File,		_T("File"),			LVCFMT_LEFT,	250);
-	m_ListCtrl.InsertColumn(COL_Rows,		_T("Rows"),			LVCFMT_RIGHT,	80);
-	m_ListCtrl.InsertColumn(COL_URL,		_T("URL column"),	LVCFMT_CENTER,	80);
-	m_ListCtrl.InsertColumn(COL_Threads,	_T("Threads"),		LVCFMT_RIGHT,	80);
-	m_ListCtrl.InsertColumn(COL_Status,		_T("Status"),		LVCFMT_CENTER,	80);
+	m_ListCtrl.InsertColumn(COL_Rows,		_T("Rows"),			LVCFMT_RIGHT,	60);
+	m_ListCtrl.InsertColumn(COL_URL,		_T("URL column"),	LVCFMT_CENTER,	70);
+	m_ListCtrl.InsertColumn(COL_mail,		_T("Mail column"),	LVCFMT_CENTER,	70);
+	m_ListCtrl.InsertColumn(COL_Threads,	_T("Threads"),		LVCFMT_RIGHT,	60);
+	m_ListCtrl.InsertColumn(COL_Status,		_T("Status"),		LVCFMT_CENTER,	60);
 
 	AdjustListColumn(&m_ListCtrl);
 	
@@ -173,6 +194,7 @@ BOOL CScrapperDlg::OnInitDialog()
 		m_editProxy.SetWindowTextW(szCP);
 	}
 	LoadTLD();
+	Load();
 	UpdateData(FALSE);
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -236,6 +258,7 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 		if (g_nTotalThread <= 0) {
 			break;
 		}
+		Sleep(500);
 	}
 
 	// save
@@ -254,7 +277,7 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 							for (int ii = 0; ii < strlen(g_Tasks[i].saves[j].mail); ii++) {
 								mail[ii] = g_Tasks[i].saves[j].mail[ii];
 							}
-							sheet->writeStr(g_Tasks[i].saves[j].row, g_Tasks[i].col - 1, mail);
+							sheet->writeStr(g_Tasks[i].saves[j].row, g_Tasks[i].mail, mail);
 						}
 					}
 					book->save(szXlsx);
@@ -284,6 +307,24 @@ int is_valid_email(const char* email) {
 
 	if (*(dot + 1) == '\0') return 0;
 
+	int nDot = 0;
+	for (int i = 0; i < strlen(email); i++) {
+		if (email[i] == '.') {
+			nDot++;
+		}
+	}
+	if (nDot != 1) {
+		return 0;
+	}
+	int i = 0;
+	for (; i < g_TLDs.size(); i++) {
+		if (strstr(email, g_TLDs[i].v)) {
+			break;
+		}
+	}
+	if (i == g_TLDs.size()) {
+		return 0;
+	}
 	return 1;
 }
 
@@ -333,8 +374,13 @@ DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
 		g_Tasks[i].pos++;
 		LeaveCriticalSection(&g_Tasks[i].mutex);
 
-		char command[256];
-		snprintf(command, sizeof(command), "curl -s \"%s%s\"", strstr(item.url, "http") ? "" : "https://", item.url);
+		char command[256] = { 0 };
+		if (!g_bUseProxy) {
+			snprintf(command, sizeof(command), "curl -s \"%s%s\"", strstr(item.url, "http") ? "" : "https://", item.url);
+		}
+		else {
+			snprintf(command, sizeof(command), "curl -x https://%s -s \"%s%s\"", g_szProxy, strstr(item.url, "http") ? "" : "https://", item.url);
+		}
 
 		SECURITY_ATTRIBUTES sa;
 		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -427,9 +473,26 @@ void CScrapperDlg::OnBnClickedOk() {
 		AfxMessageBox(_T("No Task"));
 		return;
 	}
+
+	g_bUseProxy = m_UseProxySetting;
+
+	FILE* fp;
+	fopen_s(&fp, "proxy.config", "rb");
+	if (fp) {
+		fread(g_szProxy, 1, sizeof(g_szProxy), fp);
+		fclose(fp);
+	}
+
+	if (g_bUseProxy && strlen(g_szProxy) == 0) {
+		AfxMessageBox(_T("Please check proxy setting"));
+		return;
+	}
+
 	m_Percent.ShowWindow(SW_SHOW);
 	UpdatePercent();
 	EnableAllButtons(FALSE);
+	GetDlgItem(IDC_CHECK_PROXY)->EnableWindow(FALSE);
+	GetDlgItem(IDC_EDIT_PROXY)->EnableWindow(FALSE);
 
 	for (int i = 0; i < g_Tasks.size(); i++) {
 		for (int j = 0; j < g_Tasks[i].thread; j++) {
@@ -495,6 +558,7 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 	m_ListCtrl.InsertItem(n, dlg.GetPathName());
 	m_ListCtrl.SetItemText(n, COL_Rows, _T("--"));
 	m_ListCtrl.SetItemText(n, COL_URL, _T("--"));
+	m_ListCtrl.SetItemText(n, COL_mail, _T("--"));
 	m_ListCtrl.SetItemText(n, COL_Threads, _T("--"));
 	m_ListCtrl.SetItemText(n, COL_Status, _T("Reading..."));
 
@@ -506,7 +570,7 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 	g_Tasks.push_back(task);
 
 	CSettingDlg settingDlg;
-	settingDlg.OpenModal(this, TRUE, n, 1, _T("B"));
+	settingDlg.OpenModal(this, TRUE, n, 1, _T("B"), _T("B"));
 }
 
 void CScrapperDlg::RemoveItem(int index) {
@@ -514,12 +578,13 @@ void CScrapperDlg::RemoveItem(int index) {
 	g_Tasks.erase(g_Tasks.begin() + index);
 }
 
-void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
+void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column, CString mail) {
 	EnableAllButtons(FALSE);
 	CString tmp;
 	tmp.Format(_T("%d"), nThread);
 	m_ListCtrl.SetItemText(index, COL_Threads, tmp);
 	m_ListCtrl.SetItemText(index, COL_URL, column);
+	m_ListCtrl.SetItemText(index, COL_mail, mail);
 
 	char szFile[MAX_PATH] = { 0 };
 	CString file = m_ListCtrl.GetItemText(index, COL_File);
@@ -539,6 +604,7 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column) {
 	const char* sheetname = NULL;
 
 	g_Tasks[index].col = urlIdx;
+	g_Tasks[index].mail = mail.GetAt(0) - 'A';
 	g_Tasks[index].thread = nThread;
 	g_Tasks[index].items.clear();
 
@@ -611,9 +677,10 @@ void CScrapperDlg::OnBnClickedButtonEdit() {
 
 	int thread = _ttoi(m_ListCtrl.GetItemText(nItem, COL_Threads));
 	CString col = m_ListCtrl.GetItemText(nItem, COL_URL);
+	CString mail = m_ListCtrl.GetItemText(nItem, COL_mail);
 
 	CSettingDlg settingDlg;
-	settingDlg.OpenModal(this, FALSE, nItem, thread, col);
+	settingDlg.OpenModal(this, FALSE, nItem, thread, col, mail);
 }
 
 
@@ -632,6 +699,64 @@ void CScrapperDlg::OnBnClickedButtonClear() {
 	m_ListCtrl.DeleteAllItems();
 }
 
+void CScrapperDlg::Save() {
+	FILE* fp;
+	fopen_s(&fp, "save.dat", "wb");
+	if (fp) {
+		int n = g_Tasks.size();
+		fwrite(&n, 1, sizeof(int), fp);
+		for (int i = 0; i < g_Tasks.size(); i++) {
+			char szPath[MAX_PATH] = { 0 };
+			CString2Str(g_Tasks[i].file, szPath);
+			fwrite(szPath, 1, MAX_PATH, fp);
+			fwrite(&g_Tasks[i].thread, 1, sizeof(int), fp);
+			fwrite(&g_Tasks[i].col, 1, sizeof(int), fp);
+			fwrite(&g_Tasks[i].mail, 1, sizeof(int), fp);
+		}
+		fclose(fp);
+	}
+}
+
+void CScrapperDlg::Load() {
+	FILE* fp;
+	fopen_s(&fp, "save.dat", "rb");
+	if (fp) {
+		int n = 0;
+		fread(&n, 1, sizeof(int), fp);
+		for (int i = 0; i < n; i++) {
+			char szPath[MAX_PATH] = { 0 };
+			fread(szPath, 1, MAX_PATH, fp);
+			int thread = 0;
+			int col = 0;
+			int mail = 0;
+			fread(&thread, 1, sizeof(int), fp);
+			fread(&col, 1, sizeof(int), fp);
+			fread(&mail, 1, sizeof(int), fp);
+
+			m_ListCtrl.InsertItem(m_ListCtrl.GetItemCount(), Str2CString(szPath));
+			m_ListCtrl.SetItemText(n, COL_Rows, _T("--"));
+			m_ListCtrl.SetItemText(n, COL_URL, _T("--"));
+			m_ListCtrl.SetItemText(n, COL_mail, _T("--"));
+			m_ListCtrl.SetItemText(n, COL_Threads, _T("--"));
+			m_ListCtrl.SetItemText(n, COL_Status, _T("Reading..."));
+
+			TaskExcel task;
+			task.file = Str2CString(szPath);
+			task.pos = 0;
+			InitializeCriticalSection(&task.mutex);
+
+			g_Tasks.push_back(task);
+
+			CString strCol;
+			strCol.Format(_T("%c"), col + 'A');
+			CString strMail;
+			strMail.Format(_T("%c"), mail + 'A');
+
+			SetThreadColumn(m_ListCtrl.GetItemCount() - 1, thread, strCol, strMail);
+		}
+		fclose(fp);
+	}
+}
 
 void CScrapperDlg::OnBnClickedCancel() {
 	if (g_bStarted) {
@@ -640,6 +765,7 @@ void CScrapperDlg::OnBnClickedCancel() {
 		g_bStop = TRUE;
 		return;
 	}
+	Save();
 	CDialogEx::OnCancel();
 }
 
@@ -657,6 +783,9 @@ void CScrapperDlg::UpdatePercent() {
 void CScrapperDlg::Terminated() {
 	GetDlgItem(IDCANCEL)->SetWindowTextW(_T("Close"));
 	m_Percent.ShowWindow(SW_HIDE);
+	GetDlgItem(IDC_CHECK_PROXY)->EnableWindow(TRUE);
+	GetDlgItem(IDC_EDIT_PROXY)->EnableWindow(m_UseProxySetting);
+	
 	if (g_bStop) {
 		AfxMessageBox(_T("Stopped"));
 	}
@@ -712,6 +841,10 @@ void CScrapperDlg::LoadTLD() {
 			memset(buffer, 0, sizeof(buffer));
 
 			if (strlen(cp)) {
+				TLD tld;
+				memset(tld.v, 0, sizeof(tld.v));
+				strcpy_s(tld.v, cp);
+				g_TLDs.push_back(tld);
 				m_strTLDs += _T("\r\n");
 			}
 		}

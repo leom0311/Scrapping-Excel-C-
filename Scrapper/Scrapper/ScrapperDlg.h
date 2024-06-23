@@ -9,6 +9,7 @@ enum {
 	COL_File = 0,
 	COL_Rows,
 	COL_URL,
+	COL_mail,
 	COL_Threads,
 	COL_Status,
 	COL_CNT
@@ -28,6 +29,7 @@ struct TaskExcel {
 	CString file;
 	int thread;
 	int col;
+	int mail;
 
 	int pos;
 	std::vector<TaskItem> items;
@@ -63,12 +65,14 @@ protected:
 
 public:
 	void AdjustListColumn(CListCtrl* list);
-	void SetThreadColumn(int index, int nThread, CString column);
+	void SetThreadColumn(int index, int nThread, CString column, CString mail);
 	void RemoveItem(int index);
 	void EnableAllButtons(bool b);
 	void UpdatePercent();
 	void Terminated();
 	void LoadTLD();
+	void Save();
+	void Load();
 
 	static DWORD WINAPI ThreadScrapping(LPVOID lpParam);
 	static DWORD WINAPI ThreadMonitor(LPVOID lpParam);

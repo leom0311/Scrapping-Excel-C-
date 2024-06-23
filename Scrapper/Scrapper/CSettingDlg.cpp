@@ -26,6 +26,7 @@ void CSettingDlg::DoDataExchange(CDataExchange* pDX)
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_COMBO_THREAD, m_ThreadCnt);
 	DDX_Control(pDX, IDC_COMBO_URL_COLUMN, m_UrlColumn);
+	DDX_Control(pDX, IDC_COMBO_MAIL_COLUMN, m_MailColumn);
 }
 
 
@@ -50,6 +51,7 @@ BOOL CSettingDlg::OnInitDialog() {
 		CString tmp;
 		tmp.Format(_T("%c"), i);
 		m_UrlColumn.AddString(tmp);
+		m_MailColumn.AddString(tmp);
 	}
 
 	CString strThread;
@@ -62,6 +64,14 @@ BOOL CSettingDlg::OnInitDialog() {
 		m_ThreadCnt.SetCurSel(0);
 	}
 
+	index = m_MailColumn.FindStringExact(-1, m_sMail);
+	if (index != CB_ERR) {
+		m_MailColumn.SetCurSel(index);
+	}
+	else {
+		m_MailColumn.SetCurSel(0);
+	}
+
 	index = m_UrlColumn.FindStringExact(-1, m_sColumn);
 	if (index != CB_ERR) {
 		m_UrlColumn.SetCurSel(index);
@@ -70,15 +80,17 @@ BOOL CSettingDlg::OnInitDialog() {
 		m_UrlColumn.SetCurSel(0);
 	}
 
+
 	return TRUE;
 }
 
-void CSettingDlg::OpenModal(CScrapperDlg* parent, BOOL isNew, int nId, int nThread, CString sColumn) {
+void CSettingDlg::OpenModal(CScrapperDlg* parent, BOOL isNew, int nId, int nThread, CString sColumn, CString mail) {
 	m_wndParent = parent;
 	m_bIsNew = isNew;
 	m_nID = nId;
 	m_nThread = nThread;
 	m_sColumn = sColumn;
+	m_sMail = mail;
 	DoModal();
 }
 
@@ -103,7 +115,16 @@ void CSettingDlg::OnBnClickedOk() {
 		return;
 	}
 	
-	m_wndParent->SetThreadColumn(m_nID, nThread, strSelectedColumn);
+	nSel = m_MailColumn.GetCurSel();
+	CString strSelectedMail;
+	if (nSel != CB_ERR) {
+		m_MailColumn.GetLBText(nSel, strSelectedMail);
+	}
+	else {
+		return;
+	}
+
+	m_wndParent->SetThreadColumn(m_nID, nThread, strSelectedColumn, strSelectedMail);
 	CDialogEx::OnOK();
 }
 

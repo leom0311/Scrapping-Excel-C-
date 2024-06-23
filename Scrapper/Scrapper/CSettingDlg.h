@@ -28,12 +28,14 @@ public:
 	int m_nID;
 	int m_nThread;
 	CString m_sColumn;
+	CString m_sMail;
 public:
-	void OpenModal(CScrapperDlg *parent, BOOL isNew, int nId, int nThread, CString sColumn);
+	void OpenModal(CScrapperDlg *parent, BOOL isNew, int nId, int nThread, CString sColumn, CString mail);
 public:
 	virtual BOOL OnInitDialog();
 	CComboBox m_ThreadCnt;
 	CComboBox m_UrlColumn;
 	afx_msg void OnBnClickedOk();
 	afx_msg void OnBnClickedCancel();
+	CComboBox m_MailColumn;
 };
