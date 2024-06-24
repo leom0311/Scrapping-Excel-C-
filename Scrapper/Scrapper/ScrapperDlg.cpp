@@ -195,6 +195,13 @@ BOOL CScrapperDlg::OnInitDialog()
 	}
 	LoadTLD();
 	Load();
+
+	CFont m_Font;
+	m_Font.CreatePointFont(140, _T("Arial"));
+
+	m_ListCtrl.SetFont(&m_Font);
+	GetDlgItem(IDC_EDIT3)->SetFont(&m_Font);
+	
 	UpdateData(FALSE);
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -274,10 +281,10 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 					if (sheet) {
 						for (int j = 0; j < g_Tasks[i].saves.size(); j++) {
 							TCHAR mail[0x100] = { 0 };
-							for (int ii = 0; ii < strlen(g_Tasks[i].saves[j].mail); ii++) {
-								mail[ii] = g_Tasks[i].saves[j].mail[ii];
+							for (int ii = 0; ii < strlen(g_Tasks[i].saves[j]->mail); ii++) {
+								mail[ii] = g_Tasks[i].saves[j]->mail[ii];
 							}
-							sheet->writeStr(g_Tasks[i].saves[j].row, g_Tasks[i].mail, mail);
+							sheet->writeStr(g_Tasks[i].saves[j]->row, g_Tasks[i].mail, mail);
 						}
 					}
 					book->save(szXlsx);
@@ -293,7 +300,14 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 }
 
 int is_valid_email_char(char c) {
-	return isalnum(c) || c == '.' || c == '_' || c == '%' || c == '+' || c == '-' || c == '@';
+	if (c >= 'A' && c <= 'Z')
+		return 1;
+	if (c >= 'a' && c <= 'z')
+		return 1;
+	if (c >= '0' && c <= '9')
+		return 1;
+
+	return c == '.' || c == '_' || c == '%' || c == '+' || c == '-' || c == '@';
 }
 
 int is_valid_email(const char* email) {
@@ -318,12 +332,28 @@ int is_valid_email(const char* email) {
 	}
 	int i = 0;
 	for (; i < g_TLDs.size(); i++) {
-		if (strstr(email, g_TLDs[i].v)) {
+		char ban[0x40] = { 0 };
+		if (g_TLDs[i].v[0] != '.') {
+			sprintf_s(ban, ".%s", g_TLDs[i].v);
+		}
+		else {
+			sprintf_s(ban, "%s", g_TLDs[i].v);
+		}
+		if (strstr(email, ban)) {
 			break;
 		}
 	}
 	if (i == g_TLDs.size()) {
 		return 0;
+	}
+	char noprefix[][0x10] = {
+		"your@",
+		"hello@","info@","you@", "email@"
+	};
+	for (int i = 0; i < 5; i++) {
+		if (strstr(email, noprefix[i])) {
+			return 0;
+		}
 	}
 	return 1;
 }
@@ -370,88 +400,98 @@ DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
 			LeaveCriticalSection(&g_Tasks[i].mutex);
 			break;
 		}
-		TaskItem item = g_Tasks[i].items[g_Tasks[i].pos];
+		TaskItem *item = g_Tasks[i].items[g_Tasks[i].pos];
 		g_Tasks[i].pos++;
 		LeaveCriticalSection(&g_Tasks[i].mutex);
 
-		char command[256] = { 0 };
-		if (!g_bUseProxy) {
-			snprintf(command, sizeof(command), "curl -s \"%s%s\"", strstr(item.url, "http") ? "" : "https://", item.url);
-		}
-		else {
-			snprintf(command, sizeof(command), "curl -x https://%s -s \"%s%s\"", g_szProxy, strstr(item.url, "http") ? "" : "https://", item.url);
-		}
 
-		SECURITY_ATTRIBUTES sa;
-		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-		sa.lpSecurityDescriptor = NULL;
-		sa.bInheritHandle = TRUE;
-
-		HANDLE hRead, hWrite;
-		if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
-			goto _CONTINUE;
-		}
-
-		if (!SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0)) {
-			goto _CONTINUE;
-		}
-
-		STARTUPINFOA si;
-		ZeroMemory(&si, sizeof(si));
-		si.cb = sizeof(si);
-		si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
-		si.wShowWindow = SW_HIDE;
-		si.hStdOutput = hWrite;
-		si.hStdError = hWrite;
-
-		PROCESS_INFORMATION pi;
-		ZeroMemory(&pi, sizeof(pi));
-
-		if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-			goto _CONTINUE;
-		}
-		CloseHandle(hWrite);
-		
-		char buf[0x400] = { 0 };
-		DWORD bytesRead;
-		while (ReadFile(hRead, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0) {
-			char* s = buf;
-			char* p = strstr(s, "@");
-			while (p) {
-				char* next = strstr(p + 1, "@");
-				char* ss;
-				for (ss = p; ss >= s; ss--) {
-					if (!is_valid_email_char(*ss)) {
-						break;
-					}
-				}
-				s = ss + 1;
-				for (ss = s; ss < (buf + bytesRead); ss++) {
-					if (!is_valid_email_char(*ss)) {
-						*ss = '\0';
-						break;
-					}
-				}
-				if (is_valid_email(s)) {
-					printf("%s", s);
-
-					TaskSave t;
-					t.row = item.row;
-					memset(t.mail, 0, sizeof(t.mail));
-					strcpy_s(t.mail, s);
-
-					EnterCriticalSection(&g_Tasks[i].mutex);
-					g_Tasks[i].saves.push_back(t);
-					LeaveCriticalSection(&g_Tasks[i].mutex);
-				}
-				p = next;
+		for (int j = 0; j < 2; j++) {
+			char command[256] = { 0 };
+			if (!g_bUseProxy) {
+				snprintf(command, sizeof(command), "curl -k \"%s%s\"", strstr(item->url, "http") ? "" : (j == 0 ? "https://" : "https://www."), item->url);
 			}
-			memset(buf, 0, sizeof(buf));
+			else {
+				snprintf(command, sizeof(command), "curl -x https://%s -k \"%s%s\"", g_szProxy, strstr(item->url, "http") ? "" : (j == 0 ? "https://" : "https://www."), item->url);
+			}
+
+			SECURITY_ATTRIBUTES sa;
+			sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+			sa.lpSecurityDescriptor = NULL;
+			sa.bInheritHandle = TRUE;
+
+			HANDLE hRead, hWrite;
+			if (!CreatePipe(&hRead, &hWrite, &sa, 0)) {
+				goto _CONTINUE;
+			}
+
+			if (!SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0)) {
+				goto _CONTINUE;
+			}
+
+			STARTUPINFOA si;
+			ZeroMemory(&si, sizeof(si));
+			si.cb = sizeof(si);
+			si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+			si.wShowWindow = SW_HIDE;
+			si.hStdOutput = hWrite;
+			si.hStdError = hWrite;
+
+			PROCESS_INFORMATION pi;
+			ZeroMemory(&pi, sizeof(pi));
+
+			if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+				goto _CONTINUE;
+			}
+			CloseHandle(hWrite);
+		
+			char buf[0x400] = { 0 };
+			DWORD bytesRead;
+			while (ReadFile(hRead, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0) {
+				char* s = buf;
+				char* p = strstr(s, "@");
+				while (p) {
+					char* next = strstr(p + 1, "@");
+					char* ss;
+					for (ss = p; ss >= s; ss--) {
+						if (!is_valid_email_char(*ss)) {
+							break;
+						}
+					}
+					s = ss + 1;
+					for (ss = s; ss < (buf + bytesRead); ss++) {
+						if (!is_valid_email_char(*ss)) {
+							*ss = '\0';
+							break;
+						}
+					}
+					if (is_valid_email(s)) {
+						printf("%s", s);
+
+						TaskSave *t = (TaskSave*)malloc(sizeof(TaskSave));
+						t->row = item->row;
+						memset(t->mail, 0, sizeof(t->mail));
+						strcpy_s(t->mail, s);
+
+						EnterCriticalSection(&g_Tasks[i].mutex);
+						g_Tasks[i].saves.push_back(t);
+						LeaveCriticalSection(&g_Tasks[i].mutex);
+					}
+					p = next;
+				}
+				memset(buf, 0, sizeof(buf));
+			}
+		_CONTINUE:
+			CloseHandle(hRead);
+			CloseHandle(pi.hProcess);
+			CloseHandle(pi.hThread);
+
+			if (strstr(item->url, "http")) {
+				break;
+			}
+			if (g_bStop) {
+				break;
+			}
 		}
-	_CONTINUE:
-		CloseHandle(hRead);
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
 		pThis->UpdatePercent();
 	}
 	g_nTotalThread--;
@@ -575,6 +615,14 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 
 void CScrapperDlg::RemoveItem(int index) {
 	m_ListCtrl.DeleteItem(index);
+
+	for (int j = 0; j < g_Tasks[index].items.size(); j++) {
+		free(g_Tasks[index].items[j]);
+	}
+	for (int j = 0; j < g_Tasks[index].saves.size(); j++) {
+		free(g_Tasks[index].saves[j]);
+	}
+
 	g_Tasks.erase(g_Tasks.begin() + index);
 }
 
@@ -621,12 +669,16 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column, CStri
 					if (url[0]) {
 						if (wcsstr(url, _T("."))) {
 							ValidRow++;
-
-							TaskItem item;
-							item.row = totalRow;
-							memset(item.url, 0, sizeof(item.url));
+							TaskItem* item = NULL;
+							item = (struct TaskItem*)malloc(sizeof(TaskItem));
+							memset(item, 0, sizeof(struct TaskItem));
+							item->row = totalRow;
+							memset(item->url, 0, sizeof(item->url));
 							for (int j = 0; j < wcslen(url); j++) {
-								item.url[j] = url[j];
+								if (j >= 0x200 - 4) {
+									break;
+								}
+								item->url[j] = url[j];
 							}
 							g_Tasks[index].items.push_back(item);
 						}
@@ -637,11 +689,15 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column, CStri
 					else {
 						EmptyRow++;
 					}
-					xlsxioread_free(value);
+					if (value) {
+						xlsxioread_free(value);
+					}
 					break;
 				}
 				tmp++;
-				xlsxioread_free(value);
+				if (value) {
+					xlsxioread_free(value);
+				}
 			}
 			totalRow++;
 		}
@@ -692,11 +748,21 @@ void CScrapperDlg::OnBnClickedButtonRemove() {
 	}
 	int nItem = m_ListCtrl.GetNextSelectedItem(pos);
 	m_ListCtrl.DeleteItem(nItem);
+	RemoveItem(nItem);
 }
 
 
 void CScrapperDlg::OnBnClickedButtonClear() {
 	m_ListCtrl.DeleteAllItems();
+	for (int i = 0; i < g_Tasks.size(); i++) {
+		for (int j = 0; j < g_Tasks[i].items.size(); j++) {
+			free(g_Tasks[i].items[j]);
+		}
+		for (int j = 0; j < g_Tasks[i].saves.size(); j++) {
+			free(g_Tasks[i].saves[j]);
+		}
+	}
+	g_Tasks.clear();
 }
 
 void CScrapperDlg::Save() {
@@ -782,6 +848,7 @@ void CScrapperDlg::UpdatePercent() {
 
 void CScrapperDlg::Terminated() {
 	GetDlgItem(IDCANCEL)->SetWindowTextW(_T("Close"));
+	GetDlgItem(IDCANCEL)->EnableWindow(TRUE);
 	m_Percent.ShowWindow(SW_HIDE);
 	GetDlgItem(IDC_CHECK_PROXY)->EnableWindow(TRUE);
 	GetDlgItem(IDC_EDIT_PROXY)->EnableWindow(m_UseProxySetting);

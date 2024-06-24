@@ -17,7 +17,7 @@ enum {
 
 struct TaskItem {
 	int row;
-	char url[0x100];
+	char url[0x200];
 };
 struct TaskSave {
 	int row;
@@ -32,8 +32,8 @@ struct TaskExcel {
 	int mail;
 
 	int pos;
-	std::vector<TaskItem> items;
-	std::vector<TaskSave> saves;
+	std::vector<TaskItem*> items;
+	std::vector<TaskSave*> saves;
 };
 
 // CScrapperDlg dialog

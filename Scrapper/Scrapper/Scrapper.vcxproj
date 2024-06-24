@@ -100,6 +100,10 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalDependencies>C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\lib\libxlsxio_readw.lib;C:\Users\Administrator\Downloads\xlsxio-0.2.35-binary-win64\lib\libxlsxio_write.lib;D:\Work\libxl_sample-master\libxl_sample-master\libxs_lib_release_x64\lib\libxl.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <HeapReserveSize>0x4000000</HeapReserveSize>
+      <HeapCommitSize>0x4000000</HeapCommitSize>
+      <StackReserveSize>0x4000000</StackReserveSize>
+      <StackCommitSize>0x4000000</StackCommitSize>
     </Link>
     <Midl>
       <MkTypLibCompatible>false</MkTypLibCompatible>
