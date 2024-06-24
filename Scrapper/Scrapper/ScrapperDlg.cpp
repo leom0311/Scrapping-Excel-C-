@@ -271,25 +271,65 @@ DWORD WINAPI CScrapperDlg::ThreadMonitor(LPVOID lpParam) {
 	// save
 	if (!g_bStop) {
 		for (int i = 0; i < g_Tasks.size(); i++) {
-			Book* book = xlCreateXMLBook();
-			book->setKey(_T("Halil Kural"), _T("windows-2723210a07c4e90162b26966a8jcdboe"));
-			if (book) {
-				TCHAR szXlsx[MAX_PATH] = { 0 };
-				CString2Wstr(g_Tasks[i].file, szXlsx);
-				if (book->load(szXlsx)) {
-					Sheet* sheet = book->getSheet(0);
-					if (sheet) {
-						for (int j = 0; j < g_Tasks[i].saves.size(); j++) {
-							TCHAR mail[0x100] = { 0 };
-							for (int ii = 0; ii < strlen(g_Tasks[i].saves[j]->mail); ii++) {
-								mail[ii] = g_Tasks[i].saves[j]->mail[ii];
+			if (g_Tasks[i].excel) {
+				Book* book = xlCreateXMLBook();
+				book->setKey(_T("Halil Kural"), _T("windows-2723210a07c4e90162b26966a8jcdboe"));
+				if (book) {
+					TCHAR szXlsx[MAX_PATH] = { 0 };
+					CString2Wstr(g_Tasks[i].file, szXlsx);
+					if (book->load(szXlsx)) {
+						Sheet* sheet = book->getSheet(0);
+						if (sheet) {
+							for (int j = 0; j < g_Tasks[i].saves.size(); j++) {
+								TCHAR mail[0x100] = { 0 };
+								for (int ii = 0; ii < strlen(g_Tasks[i].saves[j]->mail); ii++) {
+									mail[ii] = g_Tasks[i].saves[j]->mail[ii];
+								}
+								sheet->writeStr(g_Tasks[i].saves[j]->row, g_Tasks[i].mail, mail);
 							}
-							sheet->writeStr(g_Tasks[i].saves[j]->row, g_Tasks[i].mail, mail);
 						}
+						book->save(szXlsx);
 					}
-					book->save(szXlsx);
+					book->release();
 				}
-				book->release();
+			}
+			else {
+				int failed = 0;
+				std::vector<std::vector<std::string>> vals = pThis->ReadCSV(g_Tasks[i].file, &failed);
+				if (failed) {
+					AfxMessageBox(_T("Failed to save file > ") + g_Tasks[i].file);
+				}
+				else {
+					char szFile[MAX_PATH] = { 0 };
+					CString2Str(g_Tasks[i].file, szFile);
+					FILE* fp;
+					fopen_s(&fp, szFile, "wb");
+					if (!fp) {
+						AfxMessageBox(_T("Failed to save file > ") + g_Tasks[i].file);
+					}
+					else {
+						for (int ii = 0; ii < vals.size(); ii++) {
+							for (int jj = 0; jj < vals[i].size(); jj++) {
+								if (jj != g_Tasks[i].mail) {
+									fwrite(vals[ii][jj].c_str(), 1, strlen(vals[ii][jj].c_str()), fp);
+								}
+								else {
+									char szData[0x200] = { 0 };
+									for (int k = 0; k < g_Tasks[i].saves.size(); k++) {
+										if (g_Tasks[i].saves[k]->row == ii) {
+											strcpy_s(szData, g_Tasks[i].saves[k]->mail);
+										}
+									}
+									fwrite(szData, 1, strlen(szData), fp);
+								}
+								fwrite(",", 1, 1, fp);
+							}
+							char tail[2] = { 0x0d, 0x0a };
+							fwrite(tail, 1, 2, fp);
+						}
+						fclose(fp);
+					}
+				}
 			}
 		}
 	}
@@ -444,7 +484,7 @@ DWORD WINAPI CScrapperDlg::ThreadScrapping(LPVOID lpParam) {
 			}
 			CloseHandle(hWrite);
 		
-			char buf[0x400] = { 0 };
+			char buf[0x4000] = { 0 };
 			DWORD bytesRead;
 			while (ReadFile(hRead, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0) {
 				char* s = buf;
@@ -585,7 +625,7 @@ void CScrapperDlg::AdjustListColumn(CListCtrl *list) {
 }
 
 void CScrapperDlg::OnBnClickedButtonAdd() {
-	CString filter = _T("Excel Files (*.xlsx)|*.xlsx||");
+	CString filter = _T("Excel Files (*.xlsx)|*.xlsx|CSV Files (*.csv)|*.csv||");
 
 	CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, filter, this);
 
@@ -605,6 +645,7 @@ void CScrapperDlg::OnBnClickedButtonAdd() {
 	TaskExcel task;
 	task.file = dlg.GetPathName();
 	task.pos = 0;
+	task.excel = (filePath.Find(_T(".xlsx"), 0) != -1 || filePath.Find(_T(".XLSX"), 0) != -1);
 	InitializeCriticalSection(&task.mutex);
 
 	g_Tasks.push_back(task);
@@ -626,6 +667,31 @@ void CScrapperDlg::RemoveItem(int index) {
 	g_Tasks.erase(g_Tasks.begin() + index);
 }
 
+std::vector<std::string> SplitCSVRow(const std::string& row) {
+	std::vector<std::string> fields;
+	std::istringstream s(row);
+	std::string field;
+	bool inQuotes = false;
+	char prevChar = '\0';
+
+	for (char c; s.get(c); prevChar = c) {
+		if (c == '"') {
+			inQuotes = !inQuotes;
+			field += c;
+		}
+		else if (c == ',' && !inQuotes) {
+			fields.push_back(field);
+			field.clear();
+		}
+		else {
+			field += c;
+		}
+	}
+	fields.push_back(field);
+
+	return fields;
+}
+
 void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column, CString mail) {
 	EnableAllButtons(FALSE);
 	CString tmp;
@@ -637,74 +703,115 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column, CStri
 	char szFile[MAX_PATH] = { 0 };
 	CString file = m_ListCtrl.GetItemText(index, COL_File);
 	CString2Str(file, szFile);
-	
-	xlsxioreader xlsxioread;
-	if ((xlsxioread = xlsxioread_open(szFile)) == NULL) {
-		AfxMessageBox(_T("Error opening .xlsx file"));
-		RemoveItem(index);
-		EnableAllButtons(TRUE);
-		return;
-	}
 
 	int urlIdx = column.GetAt(0) - 'A';
-	char* value;
-	xlsxioreadersheet sheet;
-	const char* sheetname = NULL;
-
 	g_Tasks[index].col = urlIdx;
 	g_Tasks[index].mail = mail.GetAt(0) - 'A';
 	g_Tasks[index].thread = nThread;
 	g_Tasks[index].items.clear();
+	g_Tasks[index].saves.clear();
 
 	int totalRow = 0;
 	int ValidRow = 0;
 	int InvalidRow = 0;
 	int EmptyRow = 0;
-	if ((sheet = xlsxioread_sheet_open(xlsxioread, sheetname, XLSXIOREAD_SKIP_EMPTY_ROWS)) != NULL) {
-		while (xlsxioread_sheet_next_row(sheet)) {
-			int tmp = 0;
-			while ((value = xlsxioread_sheet_next_cell(sheet)) != NULL) {
-				if (tmp == urlIdx) {
-					TCHAR* url = (TCHAR*)value;
-					if (url[0]) {
-						if (wcsstr(url, _T("."))) {
-							ValidRow++;
-							TaskItem* item = NULL;
-							item = (struct TaskItem*)malloc(sizeof(TaskItem));
-							memset(item, 0, sizeof(struct TaskItem));
-							item->row = totalRow;
-							memset(item->url, 0, sizeof(item->url));
-							for (int j = 0; j < wcslen(url); j++) {
-								if (j >= 0x200 - 4) {
-									break;
+	if (g_Tasks[index].excel) {
+		xlsxioreader xlsxioread;
+		if ((xlsxioread = xlsxioread_open(szFile)) == NULL) {
+			AfxMessageBox(_T("Error opening .xlsx file"));
+			RemoveItem(index);
+			EnableAllButtons(TRUE);
+			return;
+		}
+
+		char* value;
+		xlsxioreadersheet sheet;
+		const char* sheetname = NULL;
+	
+		
+		if ((sheet = xlsxioread_sheet_open(xlsxioread, sheetname, XLSXIOREAD_SKIP_EMPTY_ROWS)) != NULL) {
+			while (xlsxioread_sheet_next_row(sheet)) {
+				int tmp = 0;
+				while ((value = xlsxioread_sheet_next_cell(sheet)) != NULL) {
+					if (tmp == urlIdx) {
+						TCHAR* url = (TCHAR*)value;
+						if (url[0]) {
+							if (wcsstr(url, _T("."))) {
+								ValidRow++;
+								TaskItem* item = NULL;
+								item = (struct TaskItem*)malloc(sizeof(TaskItem));
+								memset(item, 0, sizeof(struct TaskItem));
+								item->row = totalRow;
+								memset(item->url, 0, sizeof(item->url));
+								for (int j = 0; j < wcslen(url); j++) {
+									if (j >= 0x200 - 4) {
+										break;
+									}
+									item->url[j] = url[j];
 								}
-								item->url[j] = url[j];
+								g_Tasks[index].items.push_back(item);
 							}
-							g_Tasks[index].items.push_back(item);
+							else {
+								InvalidRow++;
+							}
 						}
 						else {
-							InvalidRow++;
+							EmptyRow++;
 						}
+						if (value) {
+							xlsxioread_free(value);
+						}
+						break;
 					}
-					else {
-						EmptyRow++;
-					}
+					tmp++;
 					if (value) {
 						xlsxioread_free(value);
 					}
-					break;
 				}
-				tmp++;
-				if (value) {
-					xlsxioread_free(value);
+				totalRow++;
+			}
+			xlsxioread_sheet_close(sheet);
+		}
+		xlsxioread_close(xlsxioread);
+		
+	}
+	else {
+		int failed = 0;
+		std::vector<std::vector<std::string>> vals = ReadCSV(g_Tasks[index].file, &failed);
+		if (failed) {
+			AfxMessageBox(_T("Error opening .csv file"));
+			RemoveItem(index);
+			EnableAllButtons(TRUE);
+			return;
+		}
+		totalRow = vals.size();
+		for (int i = 0; i < vals.size(); i++) {
+			char url[0x100] = { 0 };
+			if (urlIdx >= vals[i].size()) {
+				InvalidRow++;
+				continue;
+			}
+			strcpy_s(url, vals[i][urlIdx].c_str());
+			if (url[0]) {
+				if (strstr(url, ".")) {
+					ValidRow++;
+					TaskItem* item = NULL;
+					item = (struct TaskItem*)malloc(sizeof(TaskItem));
+					memset(item, 0, sizeof(struct TaskItem));
+					item->row = i;
+					memset(item->url, 0, sizeof(item->url));
+					strcpy_s(item->url, url);
+					g_Tasks[index].items.push_back(item);
+				}
+				else {
+					InvalidRow++;
 				}
 			}
-			totalRow++;
+			else {
+				EmptyRow++;
+			}
 		}
-		xlsxioread_sheet_close(sheet);
 	}
-	xlsxioread_close(xlsxioread);
-
 	CString status;
 	status.Format(_T("Total: %d, Empty: %d, Valid: %d, Invalid: %d"), totalRow, EmptyRow, ValidRow, InvalidRow);
 	m_ListCtrl.SetItemText(index, COL_Status, status);
@@ -712,6 +819,38 @@ void CScrapperDlg::SetThreadColumn(int index, int nThread, CString column, CStri
 	status.Format(_T("%d"), totalRow);
 	m_ListCtrl.SetItemText(index, COL_Rows, status);
 	EnableAllButtons(TRUE);
+}
+
+std::vector<std::vector<std::string>> CScrapperDlg::ReadCSV(CString filePath, int *failed) {
+	char szFile[MAX_PATH] = { 0 };
+	CString2Str(filePath, szFile);
+	std::string cppString(szFile);
+
+	std::vector<std::vector<std::string>> ret;
+
+	std::ifstream file(cppString);
+	if (!file.is_open()) {
+		*failed = 1;
+		return ret;
+	}
+
+	std::string line;
+	while (std::getline(file, line)) {
+		std::vector<std::string> row;
+		std::stringstream lineStream(line);
+		std::string cell;
+
+		row = SplitCSVRow(line);
+		/*
+		while (std::getline(lineStream, cell, ',')) {
+			row.push_back(cell);
+		}
+		*/
+		ret.push_back(row);
+	}
+	file.close();
+	*failed = 0;
+	return ret;
 }
 
 void CScrapperDlg::EnableAllButtons(bool b) {
@@ -809,6 +948,7 @@ void CScrapperDlg::Load() {
 			TaskExcel task;
 			task.file = Str2CString(szPath);
 			task.pos = 0;
+			task.excel = (task.file.Find(_T(".xlsx"), 0) != -1 || task.file.Find(_T(".XLSX"), 0) != -1);
 			InitializeCriticalSection(&task.mutex);
 
 			g_Tasks.push_back(task);

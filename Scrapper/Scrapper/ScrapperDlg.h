@@ -5,6 +5,9 @@
 #pragma once
 
 #include <vector>
+#include <string>
+#include <fstream>
+#include <sstream>
 enum {
 	COL_File = 0,
 	COL_Rows,
@@ -31,6 +34,7 @@ struct TaskExcel {
 	int col;
 	int mail;
 
+	int excel;
 	int pos;
 	std::vector<TaskItem*> items;
 	std::vector<TaskSave*> saves;
@@ -73,6 +77,7 @@ public:
 	void LoadTLD();
 	void Save();
 	void Load();
+	std::vector<std::vector<std::string>> ReadCSV(CString file, int* failed);
 
 	static DWORD WINAPI ThreadScrapping(LPVOID lpParam);
 	static DWORD WINAPI ThreadMonitor(LPVOID lpParam);
