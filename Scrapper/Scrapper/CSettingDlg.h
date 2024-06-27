@@ -29,8 +29,12 @@ public:
 	int m_nThread;
 	CString m_sColumn;
 	CString m_sMail;
+
+	BOOL m_bFromFolder;
+	int m_nStart;
+	int m_nNum;
 public:
-	void OpenModal(CScrapperDlg *parent, BOOL isNew, int nId, int nThread, CString sColumn, CString mail);
+	void OpenModal(CScrapperDlg *parent, BOOL isNew, int nId, int nThread, CString sColumn, CString mail, bool fromFolder, int start = 0, int num = 0);
 public:
 	virtual BOOL OnInitDialog();
 	CComboBox m_ThreadCnt;
@@ -38,4 +42,6 @@ public:
 	afx_msg void OnBnClickedOk();
 	afx_msg void OnBnClickedCancel();
 	CComboBox m_MailColumn;
+	CString m_Website;
+	CString m_Mail;
 };

@@ -24,7 +24,7 @@ struct TaskItem {
 };
 struct TaskSave {
 	int row;
-	char mail[0x40];
+	char mail[0x100];
 };
 
 struct TaskExcel {
@@ -69,12 +69,15 @@ protected:
 
 public:
 	void AdjustListColumn(CListCtrl* list);
-	void SetThreadColumn(int index, int nThread, CString column, CString mail);
+	BOOL SetThreadColumn(int index, int nThread, CString column, CString mail);
+	void SetThreadColumns(int start, int num, int nThread, CString column, CString mail);
 	void RemoveItem(int index);
 	void EnableAllButtons(bool b);
 	void UpdatePercent();
 	void Terminated();
 	void LoadTLD();
+	void LoadNegative();
+	void LoadPriority();
 	void Save();
 	void Load();
 	std::vector<std::vector<std::string>> ReadCSV(CString file, int* failed);
@@ -95,4 +98,6 @@ public:
 	CEdit m_editProxy;
 	afx_msg void OnEnChangeEditProxy();
 	CString m_strTLDs;
+	afx_msg void OnLvnItemchangedListExcelFiles(NMHDR* pNMHDR, LRESULT* pResult);
+	afx_msg void OnBnClickedButtonAddFolder();
 };

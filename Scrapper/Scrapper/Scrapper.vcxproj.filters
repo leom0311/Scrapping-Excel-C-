@@ -36,6 +36,9 @@
     <ClInclude Include="CSettingDlg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="FolderDlg.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Scrapper.cpp">
@@ -48,6 +51,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CSettingDlg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FolderDlg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
